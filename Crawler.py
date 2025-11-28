@@ -1,33 +1,56 @@
+from urllib.parse import urljoin, urlparse
 from urllib.request import urlopen
 from bs4 import BeautifulSoup
+import time
 import re
 
-pages = set()
+visited = set()
 
-def getLinks(pageUrl):
-    global pages
-    
-    html = urlopen('http://en.wikipedia.org{}'.format(pageUrl))
-    bs = BeautifulSoup(html, 'html.parser')
+def crawl(url, domain):
+    global visited
+
+    if url in visited:
+        return
+    visited.add(url)
+
+    print(f"\n[PAGE] {url}")
+    time.sleep(1)  # rate limiting for safety
 
     try:
-        print(bs.h1.get_text())
-        print(bs.find(id='mw-content-text').find_all('p')[0].get_text())
-        
-        edit_link = bs.find(id='ca-edit')
-        if edit_link:
-            print(edit_link.find('span').find('a').attrs['href'])
-    except AttributeError:
-        print('This page is missing something! Continuing.')
+        html = urlopen(url)
+        bs = BeautifulSoup(html, "html.parser")
+    except Exception as e:
+        print(f"[ERROR] Cannot open {url} — {e}")
+        return
 
-    for link in bs.find_all('a', href=re.compile('^(/wiki/)')):
-        if 'href' in link.attrs:
-            newPage = link.attrs['href']
-            
-            if newPage not in pages:
-                print('-' * 20)
-                print(newPage)
-                pages.add(newPage)
-                getLinks(newPage)
+    # Print page title
+    if bs.title:
+        print("[TITLE]", bs.title.get_text())
 
-getLinks('/wiki/Python_(programming_language)')
+    # Follow links
+    for link in bs.find_all("a", href=True):
+        href = link["href"]
+        absolute = urljoin(url, href)
+
+        # Stay inside the same domain
+        if urlparse(absolute).netloc != domain:
+            continue
+
+        # Skip non-HTML files
+        if re.search(r"\.(jpg|png|pdf|zip|exe|mp4|css|js)$", absolute):
+            continue
+
+        if absolute not in visited:
+            print(" └── Found:", absolute)
+            crawl(absolute, domain)
+
+
+def start(url):
+    domain = urlparse(url).netloc
+    print("[STARTING DOMAIN]:", domain)
+    crawl(url, domain)
+
+
+# Example:
+start("https://example.com")
+
